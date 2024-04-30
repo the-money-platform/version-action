@@ -1,0 +1,127 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/master/src/schemas/json/github-workflow.json
+
+name: Release
+run-name: Release ${{ github.event.commits[1] == null && github.event.head_commit.message || format('multiple commits at {0}', github.event.base_ref) }}
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: eu-west-2
+  ENV: uat
+
+permissions:
+  contents: write
+  pull-requests: write
+  repository-projects: write
+  actions: write
+
+concurrency:
+  group: release-pipeline
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: ${{ !contains( github.event.pull_request.labels.*.name, 'release:none') }}
+    concurrency:
+      group: create-and-prep-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    name: Release
+    # needs: [sonarcloud]
+    outputs:
+      version: ${{ steps.bump-semver.outputs.new_version }}
+      is-uat-pinned: ${{ steps.check.outputs.is-uat-pinned }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get Merged PRs
+        uses: actions-ecosystem/action-get-merged-pull-request@v1
+        id: get-pr
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get Release Label
+        uses: actions-ecosystem/action-release-label@v1
+        id: release-label
+        with:
+          label_prefix: 'release:'
+          labels: ${{ steps.get-pr.outputs.labels }}
+
+      - name: Validate Release Label
+        if: steps.release-label.outputs.level == null
+        run: exit 1
+
+      - name: Get Latest Semver Tag
+        id: get-latest-semver-tag
+        run: |
+          latest_prod_tag=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+          latest_beta_tag=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$' | head -n1)
+          echo "Latest Prod Tag: $latest_prod_tag"
+          echo "Latest Prod Tag: $latest_beta_tag"
+          echo "latest-prod-tag=$latest_prod_tag" >> $GITHUB_OUTPUT
+          echo "latest-prod-tag=$latest_beta_tag" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Analyze commits for release type
+        id: analyse-commits
+        run: |
+          LAST_TAG_SHA=$(git rev-list -n 1 ${{ steps.get-latest-semver-tag.outputs.latest-prod-tag }})
+          echo "Last tag SHA: $LAST_TAG_SHA"
+
+          # Fetch all commit messages since the last tag
+          COMMITS=$(git log $LAST_TAG_SHA..HEAD --pretty=format:"%s")
+          
+          # Initialize release type to patch
+          RELEASE_LEVEL="minor"
+
+          echo "$COMMITS" | grep '\[major\]' && RELEASE_LEVEL="major"
+
+          echo "Determined release level: $RELEASE_LEVEL"
+          echo "release-level=$RELEASE_TYPE" >> $GITHUB_ENV
+          echo "commit-count=$(echo $COMMITS | wc -l)"
+
+      - name: Calculate new versions
+        id: new-versions
+        uses: themoneyplatform/version-action@master
+        with:
+          release-level: ${{ steps.analyse-commits.outputs.release-level }}
+          latest-production-version: ${{ steps.get-latest-semver-tag.latest-prod-tag }}
+          latest-beta-version: ${{ steps.get-latest-semver-tag.latest-beta-tag }}
+
+      - name: Output Version
+        run: |
+          echo "Next semver version: ${{ steps.new-versions.outputs.next-production-version }}"
+          echo ""::notice title=Next semver version::${{ steps.new-versions.outputs.next-production-version }}""
+
+      - name: Push Tag
+        uses: actions-ecosystem/action-push-tag@v1
+        with:
+          tag: ${{ steps.new-versions.outputs.next-production-version }}
+          message: 'Release ${{ steps.new-versions.outputs.next-production-version }} [${{ steps.analyse-commits.outputs.release-level }}] (${{ steps.analyse-commits.outputs.commit-count }} commits)'
+
+      - name: Build Changelog
+        id: build_changelog
+        uses: mikepenz/release-changelog-builder-action@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          fromTag: ${{ steps.get-latest-semver-tag.latest-prod-tag }}
+          toTag: ${{ steps.new-versions.outputs.next-production-version }}
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.new-versions.outputs.next-production-version }}
+          release_name: Release ${{ steps.new-versions.outputs.next-production-version }} [${{ steps.analyse-commits.outputs.release-level }}]
+          body: ${{steps.build_changelog.outputs.changelog}}
+          draft: false
+          prerelease: false

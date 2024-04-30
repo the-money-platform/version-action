@@ -1,23 +1,28 @@
-name: 'The name of your action here'
-description: 'Provide a description here'
-author: 'Your name or organization here'
-
-# Add your action's branding here. This will appear on the GitHub Marketplace.
-branding:
-  icon: 'heart'
-  color: 'red'
+name: 'Calculate versions for TMP components'
+description: 'Calculates the next production and beta versions'
+author: 'The Money Platform'
 
 # Define your inputs here.
 inputs:
-  milliseconds:
-    description: 'Your input description here'
+  release-level:
+    description: 'The release level'
     required: true
-    default: '1000'
+    default: 'patch'
+  latest-production-version:
+    description: 'The latest production version'
+    required: true
+    default: 'v0.0.0'
+  latest-beta-version:
+    description: 'The latest beta version'
+    required: false
+    default: 'v0.0.0-beta.1'
 
 # Define your outputs here.
 outputs:
-  time:
-    description: 'Your output description here'
+  next-production-version:
+    description: 'The next production version'
+  next-beta-version:
+    description: 'The next beta version'
 
 runs:
   using: node20

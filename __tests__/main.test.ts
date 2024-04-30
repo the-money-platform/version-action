@@ -13,7 +13,8 @@ import * as main from '../src/main'
 const runMock = jest.spyOn(main, 'run')
 
 // Other utilities
-const timeRegex = /^\d{2}:\d{2}:\d{2}/
+const prodVersionRegex = /^v\d+.\d+.\d+$/
+const betaVersionRegex = /^v\d+.\d+.\d+-beta.\d+$/
 
 // Mock the GitHub Actions core library
 let debugMock: jest.SpiedFunction<typeof core.debug>
@@ -33,34 +34,33 @@ describe('action', () => {
     setOutputMock = jest.spyOn(core, 'setOutput').mockImplementation()
   })
 
-  it('sets the time output', async () => {
+  it('sets the version output', async () => {
     // Set the action's inputs as return values from core.getInput()
-    getInputMock.mockImplementation(name => {
-      switch (name) {
-        case 'milliseconds':
-          return '500'
-        default:
-          return ''
-      }
+      getInputMock.mockImplementation(name => {
+        switch (name) {
+          case 'release-level':
+            return 'minor'
+          case 'latest-production-version':
+            return 'v1.0.0'  
+          case 'latest-beta-version':
+            return 'v1.0.0-beta.1'
+          default:
+            return ''
+        }
     })
 
     await main.run()
     expect(runMock).toHaveReturned()
 
-    // Verify that all of the core library functions were called correctly
-    expect(debugMock).toHaveBeenNthCalledWith(1, 'Waiting 500 milliseconds ...')
-    expect(debugMock).toHaveBeenNthCalledWith(
-      2,
-      expect.stringMatching(timeRegex)
-    )
-    expect(debugMock).toHaveBeenNthCalledWith(
-      3,
-      expect.stringMatching(timeRegex)
-    )
     expect(setOutputMock).toHaveBeenNthCalledWith(
       1,
-      'time',
-      expect.stringMatching(timeRegex)
+      'next-production-version',
+      expect.stringMatching(prodVersionRegex)
+    )
+    expect(setOutputMock).toHaveBeenNthCalledWith(
+      2,
+      'next-beta-version',
+      expect.stringMatching(betaVersionRegex)
     )
     expect(errorMock).not.toHaveBeenCalled()
   })
@@ -69,12 +69,16 @@ describe('action', () => {
     // Set the action's inputs as return values from core.getInput()
     getInputMock.mockImplementation(name => {
       switch (name) {
-        case 'milliseconds':
-          return 'this is not a number'
+        case 'release-level':
+          return 'invalid'
+        case 'latest-production-version':
+          return '1.0.0'  
+        case 'latest-beta-version':
+          return '1.0.0-beta.1'
         default:
           return ''
       }
-    })
+  })
 
     await main.run()
     expect(runMock).toHaveReturned()
@@ -82,7 +86,7 @@ describe('action', () => {
     // Verify that all of the core library functions were called correctly
     expect(setFailedMock).toHaveBeenNthCalledWith(
       1,
-      'milliseconds not a number'
+      'release-level must be one of patch, minor or major'
     )
     expect(errorMock).not.toHaveBeenCalled()
   })

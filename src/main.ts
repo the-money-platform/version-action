@@ -1,5 +1,5 @@
 import * as core from '@actions/core'
-import { wait } from './wait'
+import { calculateVersions } from './version'
 
 /**
  * The main function for the action.
@@ -7,18 +7,30 @@ import { wait } from './wait'
  */
 export async function run(): Promise<void> {
   try {
-    const ms: string = core.getInput('milliseconds')
+    const releaseLevel: string = core.getInput('release-level')
+    const latestProductionVersion: string | null = core.getInput('latest-production-version')
+    const latestBetaVersion: string | null = core.getInput('latest-beta-version')
 
-    // Debug logs are only output if the `ACTIONS_STEP_DEBUG` secret is true
-    core.debug(`Waiting ${ms} milliseconds ...`)
+    // if releaseLevel is not one of patch, minor or major return an error response
+    if (releaseLevel !== 'patch' && releaseLevel !== 'minor' && releaseLevel !== 'major') {
+      throw new Error('release-level must be one of patch, minor or major')
+    }
 
-    // Log the current timestamp, wait, then log the new timestamp
-    core.debug(new Date().toTimeString())
-    await wait(parseInt(ms, 10))
-    core.debug(new Date().toTimeString())
+    const {
+      nextProductionVersion,
+      nextBetaVersion
+    } = calculateVersions(
+      releaseLevel,
+      latestProductionVersion,
+      latestBetaVersion
+    );
 
-    // Set outputs for other workflow steps to use
-    core.setOutput('time', new Date().toTimeString())
+    console.log(`Prod: ${latestProductionVersion} => ${nextProductionVersion}`)
+    console.log(`Beta: ${latestBetaVersion} => ${nextBetaVersion}`)
+
+    core.setOutput('next-production-version', nextProductionVersion)
+    core.setOutput('next-beta-version', nextBetaVersion)
+    
   } catch (error) {
     // Fail the workflow run if an error occurs
     if (error instanceof Error) core.setFailed(error.message)

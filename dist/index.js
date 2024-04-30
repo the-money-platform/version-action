@@ -24951,22 +24951,25 @@ var __importStar = (this && this.__importStar) || function (mod) {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.run = void 0;
 const core = __importStar(__nccwpck_require__(2186));
-const wait_1 = __nccwpck_require__(5259);
+const version_1 = __nccwpck_require__(1946);
 /**
  * The main function for the action.
  * @returns {Promise<void>} Resolves when the action is complete.
  */
 async function run() {
     try {
-        const ms = core.getInput('milliseconds');
-        // Debug logs are only output if the `ACTIONS_STEP_DEBUG` secret is true
-        core.debug(`Waiting ${ms} milliseconds ...`);
-        // Log the current timestamp, wait, then log the new timestamp
-        core.debug(new Date().toTimeString());
-        await (0, wait_1.wait)(parseInt(ms, 10));
-        core.debug(new Date().toTimeString());
-        // Set outputs for other workflow steps to use
-        core.setOutput('time', new Date().toTimeString());
+        const releaseLevel = core.getInput('release-level');
+        const latestProductionVersion = core.getInput('latest-production-version');
+        const latestBetaVersion = core.getInput('latest-beta-version');
+        // if releaseLevel is not one of patch, minor or major return an error response
+        if (releaseLevel !== 'patch' && releaseLevel !== 'minor' && releaseLevel !== 'major') {
+            throw new Error('release-level must be one of patch, minor or major');
+        }
+        const { nextProductionVersion, nextBetaVersion } = (0, version_1.calculateVersions)(releaseLevel, latestProductionVersion, latestBetaVersion);
+        console.log(`Prod: ${latestProductionVersion} => ${nextProductionVersion}`);
+        console.log(`Beta: ${latestBetaVersion} => ${nextBetaVersion}`);
+        core.setOutput('next-production-version', nextProductionVersion);
+        core.setOutput('next-beta-version', nextBetaVersion);
     }
     catch (error) {
         // Fail the workflow run if an error occurs
@@ -24979,27 +24982,123 @@ exports.run = run;
 
 /***/ }),
 
-/***/ 5259:
+/***/ 1946:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.wait = void 0;
-/**
- * Wait for a number of milliseconds.
- * @param milliseconds The number of milliseconds to wait.
- * @returns {Promise<string>} Resolves with 'done!' after the wait is over.
- */
-async function wait(milliseconds) {
-    return new Promise(resolve => {
-        if (isNaN(milliseconds)) {
-            throw new Error('milliseconds not a number');
+exports.calculateVersions = exports.Version = void 0;
+const prodVersionRegex = /^v(\d+)\.(\d+)\.(\d+)$/;
+const betaVersionRegex = /^v(\d+)\.(\d+)\.(\d+)-beta\.(\d+)$/;
+// write this version thing as a new class version
+class Version {
+    major;
+    minor;
+    patch;
+    preReleaseType;
+    preReleaseIteration;
+    constructor(major, minor, patch, preReleaseType, preReleaseIteration) {
+        this.major = major;
+        this.minor = minor;
+        this.patch = patch;
+        this.preReleaseType = preReleaseType ?? null;
+        this.preReleaseIteration = preReleaseIteration ?? null;
+    }
+    // add function to parse a production version from a string
+    static parseProductionVersion(version) {
+        const match = prodVersionRegex.exec(version);
+        if (!match) {
+            throw new Error('Invalid production version');
         }
-        setTimeout(() => resolve('done!'), milliseconds);
-    });
+        const [, major, minor, patch] = match;
+        return new Version(parseInt(major), parseInt(minor), parseInt(patch));
+    }
+    // add function to parse a beta version from a string
+    static parseBetaVersion(version) {
+        const match = betaVersionRegex.exec(version);
+        if (!match) {
+            throw new Error('Invalid beta version');
+        }
+        const [, major, minor, patch, iteration] = match;
+        return new Version(parseInt(major), parseInt(minor), parseInt(patch), 'beta', parseInt(iteration));
+    }
+    incrementByType(releaseLevel) {
+        switch (releaseLevel) {
+            case 'major':
+                return this.incrementMajor();
+            case 'minor':
+                return this.incrementMinor();
+            case 'patch':
+                return this.incrementPatch();
+            default:
+                throw new Error('Invalid release level');
+        }
+    }
+    isPreRelease() {
+        // check if type and iteration are not null or undefined
+        return this.preReleaseType !== null && this.preReleaseIteration !== null;
+    }
+    // add function to check is this version is higher than anthor
+    isHigherThan(other) {
+        if (this.major > other.major) {
+            return true;
+        }
+        else if (this.major < other.major) {
+            return false;
+        }
+        else if (this.minor > other.minor) {
+            return true;
+        }
+        else if (this.minor < other.minor) {
+            return false;
+        }
+        else if (this.patch > other.patch) {
+            return true;
+        }
+        else {
+            return false;
+        }
+    }
+    incrementMajor() {
+        return new Version(this.major + 1, 0, 0);
+    }
+    incrementMinor() {
+        return new Version(this.major, this.minor + 1, 0);
+    }
+    incrementPatch() {
+        return new Version(this.major, this.minor, this.patch + 1);
+    }
+    incrementPreRelease() {
+        if (!this.isPreRelease()) {
+            throw new Error('Invalid pre-release version');
+        }
+        return new Version(this.major, this.minor, this.patch, this.preReleaseType, (this.preReleaseIteration ?? 0) + 1);
+    }
+    toBeta() {
+        return new Version(this.major, this.minor, this.patch, 'beta', 1);
+    }
+    toString() {
+        if (this.isPreRelease()) {
+            return `v${this.major}.${this.minor}.${this.patch}-${this.preReleaseType}.${this.preReleaseIteration}`;
+        }
+        else {
+            return `v${this.major}.${this.minor}.${this.patch}`;
+        }
+    }
 }
-exports.wait = wait;
+exports.Version = Version;
+function calculateVersions(releaseLevel, latestProductionVersion, latestBetaVersion) {
+    const prod = latestProductionVersion ? Version.parseProductionVersion(latestProductionVersion) : new Version(0, 0, 0);
+    const newProd = prod.incrementByType(releaseLevel);
+    const beta = latestBetaVersion ? Version.parseBetaVersion(latestBetaVersion) : new Version(0, 0, 0, 'beta', 1);
+    const newBeta = newProd.isHigherThan(beta) ? newProd.toBeta() : beta.incrementPreRelease();
+    return {
+        nextProductionVersion: newProd.toString(),
+        nextBetaVersion: newBeta.toString(),
+    };
+}
+exports.calculateVersions = calculateVersions;
 
 
 /***/ }),
