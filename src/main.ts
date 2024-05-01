@@ -12,8 +12,8 @@ export async function run(): Promise<void> {
     const latestBetaVersion: string | null = core.getInput('latest-beta-version')
 
     // if releaseLevel is not one of patch, minor or major return an error response
-    if (releaseLevel !== 'patch' && releaseLevel !== 'minor' && releaseLevel !== 'major') {
-      throw new Error('release-level must be one of patch, minor or major')
+    if (!['patch', 'minor', 'major'].includes(releaseLevel)) {
+      throw new Error(`release-level: '${releaseLevel}' invalid. Must be one of patch, minor or major`)
     }
 
     const {

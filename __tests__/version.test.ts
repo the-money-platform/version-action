@@ -1,4 +1,4 @@
-import { calculateVersions } from '../version'
+import { calculateVersions } from '../src/version'
 
 describe('calculateVersions', () => {
   it('increments patch version correctly', () => {

@@ -62,9 +62,9 @@ jobs:
           latest_prod_tag=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
           latest_beta_tag=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-beta\.[0-9]+$' | head -n1)
           echo "Latest Prod Tag: $latest_prod_tag"
-          echo "Latest Prod Tag: $latest_beta_tag"
+          echo "Latest Beta Tag: $latest_beta_tag"
           echo "latest-prod-tag=$latest_prod_tag" >> $GITHUB_OUTPUT
-          echo "latest-prod-tag=$latest_beta_tag" >> $GITHUB_OUTPUT
+          echo "latest-beta-tag=$latest_beta_tag" >> $GITHUB_OUTPUT
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

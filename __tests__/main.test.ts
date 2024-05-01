@@ -86,7 +86,7 @@ describe('action', () => {
     // Verify that all of the core library functions were called correctly
     expect(setFailedMock).toHaveBeenNthCalledWith(
       1,
-      'release-level must be one of patch, minor or major'
+      "release-level: 'invalid' invalid. Must be one of patch, minor or major"
     )
     expect(errorMock).not.toHaveBeenCalled()
   })
